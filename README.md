@@ -190,7 +190,12 @@ covers the repo the workflow lives in. So:
    - Repository access: **only** `<entries-repo>`.
    - Permissions: **Contents: Read and write**. Nothing else.
 2. In the `journey` repo on GitHub, go to **Settings → Secrets and
-   variables → Actions** and add:
+   variables → Actions**, and under the **Secrets** tab add each of these as
+   a **Repository secret** — not an Environment secret, and not a variable.
+   Environment secrets only reach a job that explicitly declares
+   `environment: <name>` in the workflow, which `daily.yml` doesn't (there's
+   no deployment gating here), so one would just be silently invisible to
+   the run:
    - `ENTRIES_REPO_TOKEN` — the token from step 1.
    - `ENTRIES_REPO` — `<your-github-username>/<entries-repo>`. This is a
      secret rather than a repo variable even though the name itself isn't a
