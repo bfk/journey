@@ -40,6 +40,13 @@ ENTRIES_REPO_PATH = Path(_require("ENTRIES_REPO_PATH")).expanduser()
 TIMEZONE = os.environ.get("JOURNEY_TIMEZONE", "Europe/London")
 SEND_HOUR_LOCAL = int(os.environ.get("JOURNEY_SEND_HOUR", "21"))
 
+# Optional: only present in the GitHub Actions run (not local manual testing),
+# used solely for the PAT-expiry health check in journey/health.py -- the
+# same token git already uses via actions/checkout's credential helper, just
+# also readable here for one extra read-only API call.
+ENTRIES_REPO_TOKEN = os.environ.get("ENTRIES_REPO_TOKEN")
+ENTRIES_REPO = os.environ.get("ENTRIES_REPO")
+
 # State lives inside the entries repo (not this one) so it survives across
 # ephemeral CI runners via git commits, instead of relying on local disk.
 STATE_DIR = ENTRIES_REPO_PATH / ".state"

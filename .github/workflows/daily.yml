@@ -12,9 +12,31 @@ on:
 jobs:
   run:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write   # needed only for the keepalive commit back to this repo
     steps:
       - name: Check out journey (code)
         uses: actions/checkout@v4
+
+      - name: Keep this scheduled workflow alive
+        # GitHub auto-disables scheduled workflows after 60 days of no
+        # activity in the repo the workflow lives in -- and our actual daily
+        # activity all lands in the entries repo, not here, so this repo's
+        # own clock would otherwise only reset when the code itself changes.
+        # Nudge it with a trivial commit well before the 60-day cutoff so the
+        # schedule never lapses, rather than trying to warn about a disable
+        # that (by definition) couldn't run to warn anyone once it happens.
+        run: |
+          days_since_last_commit=$(( ( $(date -u +%s) - $(git log -1 --format=%ct) ) / 86400 ))
+          echo "Days since journey's last commit: $days_since_last_commit"
+          if [ "$days_since_last_commit" -ge 45 ]; then
+            git config user.name "journey-bot"
+            git config user.email "journey-bot@users.noreply.github.com"
+            date -u +"%Y-%m-%dT%H:%M:%SZ" > .heartbeat
+            git add .heartbeat
+            git commit -m "chore: keepalive (scheduled workflows auto-disable after 60 days of repo inactivity)"
+            git push
+          fi
 
       - name: Check out the entries repo (journal data)
         uses: actions/checkout@v4
@@ -46,6 +68,12 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           ENTRIES_REPO_PATH: ${{ github.workspace }}/entries-repo
+          # Only used for the PAT-expiry health check (journey/health.py) --
+          # git itself already has push access via actions/checkout's token
+          # input above; this just lets the script make one read-only API
+          # call with the same token to ask GitHub when it expires.
+          ENTRIES_REPO_TOKEN: ${{ secrets.ENTRIES_REPO_TOKEN }}
+          ENTRIES_REPO: ${{ secrets.ENTRIES_REPO }}
           JOURNEY_TIMEZONE: Europe/London
           JOURNEY_SEND_HOUR: "21"
         run: python3 -m journey.run

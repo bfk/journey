@@ -271,6 +271,40 @@ needed for that; the entries are already the input Claude works from.
   instructions to act on — the same rule that applies to any tool output.
   That's Claude's default behavior, but worth knowing if you build any other
   tooling against these files.
+- **`ENTRIES_REPO_TOKEN` is readable by `journey/health.py`, not just by
+  git.** It was originally only ever handed to `actions/checkout`, which uses
+  it internally for git's own credential helper — the Python script never
+  saw it. The PAT-expiry check below needs to make its own authenticated API
+  call with that same token, so it's now also passed into the script's
+  environment. Same secret, same job, one more internal consumer reading it
+  read-only — not a new party gaining access, just a widened *use* of access
+  the job already had.
+
+## Maintenance
+
+Two things need periodic attention even once this is running — both are now
+handled with as little manual effort as reasonably possible:
+
+- **The `ENTRIES_REPO_TOKEN` PAT expires** on whatever schedule you set when
+  creating it (Settings 6 recommends giving it an actual expiration rather
+  than none). `journey/health.py` checks GitHub's own record of that expiry
+  date on every run — not a guess — and has the bot send you a standalone
+  Telegram message (not attached to any prompt) once it's within 7 days of
+  expiring, once per day until you rotate it. When that happens: create a
+  new fine-grained PAT the same way as in step 6, and update the
+  `ENTRIES_REPO_TOKEN` secret with the new value.
+- **GitHub auto-disables scheduled workflows after 60 days of no activity**
+  in the repo the workflow lives in (`journey`) — and since this project's
+  actual daily activity all lands in the *entries* repo, `journey` itself
+  would otherwise only get touched when the code changes, which could easily
+  exceed 60 days. Rather than trying to warn about this (a disabled schedule
+  can't run to warn you — there's no window in which it's both about to be
+  disabled and still capable of telling you so), the workflow prevents it
+  outright: every run checks how long it's been since `journey`'s last
+  commit, and once that passes 45 days, pushes a trivial one-line
+  `.heartbeat` commit to reset GitHub's clock. No action needed on your
+  part; mentioned here so a `chore: keepalive` commit showing up in the
+  history isn't a surprise.
 
 ## Known limitations
 
@@ -278,10 +312,6 @@ needed for that; the entries are already the input Claude works from.
   (non-reply) message, it gets attributed to the *most recent* prompt, not
   necessarily the one you meant to answer — use Telegram's reply action on
   the specific prompt you're answering to avoid this (see "How it works").
-- GitHub disables scheduled workflows automatically after 60 days of no
-  activity in the `journey` repo itself (not the entries repo). If the
-  prompts stop arriving after a long quiet stretch, check the **Actions**
-  tab in `journey` for a banner offering to re-enable it.
 - The hourly trigger means a reply can take up to ~1 hour to show up as a
   commit, and the daily prompt can go out up to ~1 hour later than
   `JOURNEY_SEND_HOUR` if a run is delayed — GitHub doesn't guarantee

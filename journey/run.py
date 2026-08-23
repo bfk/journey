@@ -21,7 +21,7 @@ import datetime
 import sys
 from zoneinfo import ZoneInfo
 
-from . import config, entries, prompts, state as state_mod
+from . import config, entries, health, prompts, state as state_mod
 from .telegram_client import TelegramClient
 
 
@@ -112,6 +112,14 @@ def main() -> int:
         print(f"Already sent today's prompt ({today.isoformat()}); nothing more to do.")
     else:
         print(f"Not sending yet (local time {now_local:%H:%M}, target hour {config.SEND_HOUR_LOCAL}).")
+
+    pat_warning = health.check_pat_expiry()
+    if pat_warning and st.get("last_pat_warning_date") != today.isoformat():
+        # A standalone status message, not attached to any prompt_id -- it's
+        # about the system, not something to reply to or attribute an entry to.
+        client.send_message(config.TELEGRAM_CHAT_ID, pat_warning)
+        st["last_pat_warning_date"] = today.isoformat()
+        print("Sent PAT-expiry warning.")
 
     state_mod.prune_sent_prompts(st, today)
     state_mod.save(st)
