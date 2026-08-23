@@ -69,7 +69,11 @@ run is thrown away immediately afterward.
 
 ### 1. Create the Telegram bot
 
-**Searching for "BotFather" in Telegram is not safe** — Telegram's in-app
+Creating a Telegram bot is surprisingly easy and also free - assuming that you
+have a Telegram account, you just tell the `@BotFather` bot that you want one 
+and keep track of the key.
+
+_But_: **Searching for "BotFather" in Telegram is not safe** — Telegram's in-app
 search matches the display name, which anyone can set to anything, not the
 `@username`, which is the only part that's actually unique and can't be
 faked. Search for it and you'll find several impostor accounts with names
