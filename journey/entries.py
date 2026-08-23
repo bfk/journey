@@ -19,9 +19,47 @@ def _run_git(*args: str) -> None:
         raise RuntimeError(f"git {' '.join(args)} failed:\n{result.stderr}")
 
 
+def _current_branch() -> str:
+    # symbolic-ref (not rev-parse --abbrev-ref) because it works even on a
+    # brand-new repo with zero commits yet, where HEAD doesn't resolve to a
+    # commit at all but still points at a branch name.
+    result = subprocess.run(
+        ["git", "symbolic-ref", "--short", "HEAD"],
+        cwd=config.ENTRIES_REPO_PATH,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"git symbolic-ref --short HEAD failed:\n{result.stderr}")
+    return result.stdout.strip()
+
+
+def _remote_branch_exists(branch: str) -> bool:
+    result = subprocess.run(
+        ["git", "ls-remote", "--exit-code", "--heads", "origin", branch],
+        cwd=config.ENTRIES_REPO_PATH,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode == 0:
+        return True
+    if result.returncode == 2:  # git's documented "no matching refs" exit code
+        return False
+    raise RuntimeError(f"git ls-remote failed:\n{result.stderr}")
+
+
 def sync_repo() -> None:
-    """Pull latest before writing, in case an entry was edited from another device."""
-    _run_git("pull", "--ff-only")
+    """Pull latest before writing, in case an entry was edited from another device.
+
+    Pulls by explicit remote+branch rather than relying on upstream tracking
+    being configured, and skips cleanly (rather than erroring) if the entries
+    repo is still brand new with nothing pushed to it yet -- there's simply
+    nothing to pull in that case, not a failure.
+    """
+    branch = _current_branch()
+    if not _remote_branch_exists(branch):
+        return
+    _run_git("pull", "--ff-only", "origin", branch)
 
 
 def entry_path(date: datetime.date) -> Path:
@@ -57,5 +95,7 @@ def commit_and_push(message: str) -> bool:
 
     _run_git("add", "-A")
     _run_git("commit", "-m", message)
-    _run_git("push")
+    # -u sets upstream tracking on the first push (a fresh entries repo starts
+    # with none), and is a harmless no-op on every push after that.
+    _run_git("push", "-u", "origin", _current_branch())
     return True
