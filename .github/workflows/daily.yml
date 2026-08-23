@@ -1,0 +1,51 @@
+name: Journey daily prompt
+
+on:
+  schedule:
+    # Runs hourly, not just at the target hour: journey/run.py itself checks
+    # the local wall-clock time and only sends once per day, at JOURNEY_SEND_HOUR.
+    # This sidesteps GitHub Actions cron being UTC-only with no DST awareness,
+    # and means a reply gets picked up within an hour instead of a full day.
+    - cron: "17 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out journey (code)
+        uses: actions/checkout@v4
+
+      - name: Check out the entries repo (journal data)
+        uses: actions/checkout@v4
+        with:
+          # ENTRIES_REPO is a secret, not a repo variable, on purpose: this
+          # step's own log line ("Syncing repository: <value>") would print
+          # a plain variable's value into the (potentially public) run log
+          # unredacted. Only secrets.* get automatically masked in logs.
+          repository: ${{ secrets.ENTRIES_REPO }}
+          token: ${{ secrets.ENTRIES_REPO_TOKEN }}
+          path: entries-repo
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Ensure tzdata is available
+        run: pip install tzdata
+
+      - name: Configure git identity for entries repo
+        working-directory: entries-repo
+        run: |
+          git config user.name "journey-bot"
+          git config user.email "journey-bot@users.noreply.github.com"
+
+      - name: Run journey
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          ENTRIES_REPO_PATH: ${{ github.workspace }}/entries-repo
+          JOURNEY_TIMEZONE: Europe/London
+          JOURNEY_SEND_HOUR: "21"
+        run: python3 -m journey.run
