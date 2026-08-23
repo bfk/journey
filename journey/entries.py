@@ -67,15 +67,20 @@ def entry_path(date: datetime.date) -> Path:
 
 
 def append_entry(date: datetime.date, prompt_text: str, reply_text: str) -> Path:
+    """Appends a prompt+reply block to the day's entry file, always labeling
+    which prompt it answers -- even on a later append to an already-existing
+    file, since a given day can have more than one prompt (e.g. a manually
+    forced prompt alongside the scheduled one), and a block with no label
+    silently reads as answering whatever prompt came first that day."""
     path = entry_path(date)
     path.parent.mkdir(parents=True, exist_ok=True)
+    block = f"**Prompt:** {prompt_text}\n\n{reply_text}\n"
 
     if path.exists():
-        # A second reply arriving the same day -- add it under the same entry.
         with path.open("a") as f:
-            f.write(f"\n---\n\n{reply_text}\n")
+            f.write(f"\n---\n\n{block}")
     else:
-        path.write_text(f"# {date.isoformat()}\n\n**Prompt:** {prompt_text}\n\n{reply_text}\n")
+        path.write_text(f"# {date.isoformat()}\n\n{block}")
 
     return path
 
