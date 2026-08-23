@@ -7,7 +7,6 @@ swallowed and treated as "nothing to report," not an error.
 from __future__ import annotations
 
 import datetime
-import urllib.error
 import urllib.request
 
 from . import config
@@ -26,17 +25,21 @@ def check_pat_expiry() -> str | None:
     if not config.ENTRIES_REPO_TOKEN or not config.ENTRIES_REPO:
         return None  # not available outside the GitHub Actions run
 
-    req = urllib.request.Request(
-        f"https://api.github.com/repos/{config.ENTRIES_REPO}",
-        headers={
-            "Authorization": f"Bearer {config.ENTRIES_REPO_TOKEN}",
-            "Accept": "application/vnd.github+json",
-        },
-    )
     try:
+        # Request construction is inside the try too, not just urlopen() --
+        # this function's whole contract is "advisory, never raise", so the
+        # broad except below is intentional, not laziness: anything going
+        # wrong here should be a skipped check, never a crashed run.
+        req = urllib.request.Request(
+            f"https://api.github.com/repos/{config.ENTRIES_REPO}",
+            headers={
+                "Authorization": f"Bearer {config.ENTRIES_REPO_TOKEN}",
+                "Accept": "application/vnd.github+json",
+            },
+        )
         with urllib.request.urlopen(req, timeout=15) as resp:
             expiration_header = resp.headers.get("github-authentication-token-expiration")
-    except (urllib.error.URLError, TimeoutError, OSError):
+    except Exception:
         return None
 
     if not expiration_header:

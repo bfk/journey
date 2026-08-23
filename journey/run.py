@@ -50,7 +50,7 @@ def main() -> int:
     now_local = datetime.datetime.now(ZoneInfo(config.TIMEZONE))
     today = now_local.date()
 
-    updates = client.get_updates(offset=st.get("telegram_offset"))
+    updates = client.get_all_updates(offset=st.get("telegram_offset"))
     replies_by_date: dict[str, list[str]] = {}
     question_id_by_date: dict[str, str] = {}
     max_update_id = None
@@ -113,7 +113,14 @@ def main() -> int:
     else:
         print(f"Not sending yet (local time {now_local:%H:%M}, target hour {config.SEND_HOUR_LOCAL}).")
 
-    pat_warning = health.check_pat_expiry()
+    try:
+        pat_warning = health.check_pat_expiry()
+    except Exception as exc:
+        # Belt and braces on top of health.py's own broad catch: a health
+        # check must never take down the actual journaling flow, even if a
+        # future change to health.py forgets to honor that itself.
+        print(f"PAT-expiry check failed unexpectedly, skipping it: {exc}")
+        pat_warning = None
     if pat_warning and st.get("last_pat_warning_date") != today.isoformat():
         # A standalone status message, not attached to any prompt_id -- it's
         # about the system, not something to reply to or attribute an entry to.

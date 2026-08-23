@@ -35,3 +35,20 @@ class TelegramClient:
         if offset is not None:
             params["offset"] = offset
         return self._call("getUpdates", params)
+
+    def get_all_updates(self, offset: int | None = None, max_batches: int = 50) -> list[dict]:
+        """Drains every update since offset, not just the first page --
+        Telegram caps a single getUpdates call at 100. Capped at max_batches
+        (5000 updates) so a flood of unrelated messages to this bot (its
+        username is technically discoverable even if never shared) can't
+        make a single run run indefinitely; any remainder is simply picked
+        up by the next run, since the offset still advances correctly.
+        """
+        all_updates: list[dict] = []
+        for _ in range(max_batches):
+            batch = self.get_updates(offset=offset)
+            if not batch:
+                break
+            all_updates.extend(batch)
+            offset = batch[-1]["update_id"] + 1
+        return all_updates
