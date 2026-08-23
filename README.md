@@ -52,8 +52,8 @@ GitHub Actions to trigger it, all free.
 ## Why GitHub Actions, not a local cron job
 
 The obvious-seeming alternative — a `launchd`/cron job on a personal machine,
-or a Claude Code scheduled task — only fires while that machine is awake (and
-for the Claude Code option, while the app itself is open). That means the
+or a local AI agent scheduled task — only fires while that machine is awake (and
+for the AI option, while the app itself is open). That means the
 whole setup's reliability would depend on one particular computer being on
 and unlocked at prompt time every single day, which defeats the point of a
 low-maintenance daily habit. Running the trigger on GitHub Actions instead
@@ -251,9 +251,9 @@ resolve it manually in that repo like any other git conflict.
 
 ## Querying your journal later
 
-Once you've got a backlog, just point Claude at the `<entries-repo>` repo
+Once you've got a backlog, just point your favourite AI at the `<entries-repo>` repo
 (or ask it to read the files) and ask about trends — no special tooling
-needed for that; the entries are already the input Claude works from.
+needed for that; the entries are already the input your AI friend will work from.
 
 ## Security notes
 
@@ -285,7 +285,7 @@ needed for that; the entries are already the input Claude works from.
 - **If you later have an LLM read `<entries-repo>` for trend analysis**,
   file content should always be treated as data to summarize, never as
   instructions to act on — the same rule that applies to any tool output.
-  That's Claude's default behavior, but worth knowing if you build any other
+  That's default behavior for most agents, but worth knowing if you build any other
   tooling against these files.
 - **`ENTRIES_REPO_TOKEN` is readable by `journey/health.py`, not just by
   git.** It was originally only ever handed to `actions/checkout`, which uses
