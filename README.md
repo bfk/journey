@@ -4,7 +4,7 @@ A low-key daily journaling prompt over Telegram. Every evening it sends you an
 open-ended question; whenever you reply, your answer gets committed as a dated
 entry to a private GitHub repo you control. No server to run and no
 third-party SaaS holding your journal — a script, a Telegram bot, git, and
-GitHub Actions to trigger it.
+GitHub Actions to trigger it, all free.
 
 ## How it works
 
@@ -23,7 +23,7 @@ GitHub Actions to trigger it.
   it's actually evening in your timezone.
 - It runs on **GitHub Actions**, not your laptop — see [Why GitHub Actions,
   not a local cron job](#why-github-actions-not-a-local-cron-job) below for
-  why that matters for you specifically.
+  more on that choice.
 - The workflow triggers **hourly**, but only actually sends once a day: the
   script itself checks the current local wall-clock time (`JOURNEY_TIMEZONE` /
   `JOURNEY_SEND_HOUR` in [.github/workflows/daily.yml](.github/workflows/daily.yml))
