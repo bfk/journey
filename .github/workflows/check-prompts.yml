@@ -1,0 +1,15 @@
+name: Check prompts.json stays append-only
+
+on:
+  push:
+    paths:
+      - prompts.json
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - run: python3 scripts/check_prompts_immutable.py "${{ github.event.before }}"

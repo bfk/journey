@@ -9,7 +9,15 @@ GitHub Actions to trigger it.
 ## How it works
 
 - `prompts.json` is a library of open-ended questions. Each run picks one at
-  random, avoiding the last 30 used.
+  random, avoiding the last 30 used. **Existing ids' text must never change**
+  once added -- add a new id for a reworded question, or delete one outright
+  (safe; an in-flight reference just falls back to a placeholder). Editing
+  existing wording is unsafe because entries.py always resolves a prompt's
+  text fresh from this file *at reply-write time*, by id, not from whatever
+  was actually shown when it was sent (that's deliberate -- see Security
+  notes) -- so a same-day edit can retroactively relabel a reply that's
+  already in flight. `.github/workflows/check-prompts.yml` enforces this
+  automatically on every push that touches the file.
 - `journey/run.py` is the whole program: it checks Telegram for any new
   reply, commits it to the entries repo, and sends tonight's question once
   it's actually evening in your timezone.
