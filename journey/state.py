@@ -31,7 +31,19 @@ def load() -> dict[str, Any]:
             "recent_question_ids": [],
             "sent_prompts": {},
         }
-    state = json.loads(config.STATE_FILE.read_text())
+    try:
+        state = json.loads(config.STATE_FILE.read_text())
+    except json.JSONDecodeError as exc:
+        # Unlike a transient network blip, this doesn't self-heal -- every
+        # run will fail here identically until the file is actually fixed.
+        # Worth a clear, actionable message rather than a bare traceback.
+        raise RuntimeError(
+            f"{config.STATE_FILE} is corrupted and can't be parsed as JSON ({exc}). "
+            "This won't fix itself on the next run. Either edit the file directly, "
+            "or restore the last good version from git history: "
+            "`git log --oneline -- .state/state.json`, then "
+            "`git checkout <sha> -- .state/state.json`."
+        ) from exc
     state.setdefault("sent_prompts", {})
     return state
 

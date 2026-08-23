@@ -197,6 +197,10 @@ covers the repo the workflow lives in. So:
    [github.com/settings/personal-access-tokens/new](https://github.com/settings/personal-access-tokens/new):
    - Repository access: **only** `<entries-repo>`.
    - Permissions: **Contents: Read and write**. Nothing else.
+   - Expiration: give it an actual date rather than "No expiration" — the
+     narrow scope above already bounds the blast radius if it leaks, but an
+     expiry bounds it in *time* too, and costs nothing since journey's own
+     PAT-expiry check (see Maintenance) will remind you before it lapses.
 2. In the `journey` repo on GitHub, go to **Settings → Secrets and
    variables → Actions**, and under the **Secrets** tab add each of these as
    a **Repository secret** — not an Environment secret, and not a variable.
@@ -294,7 +298,7 @@ Two things need periodic attention even once this is running — both are now
 handled with as little manual effort as reasonably possible:
 
 - **The `ENTRIES_REPO_TOKEN` PAT expires** on whatever schedule you set when
-  creating it (Settings 6 recommends giving it an actual expiration rather
+  creating it (step 6 recommends giving it an actual expiration rather
   than none). `journey/health.py` checks GitHub's own record of that expiry
   date on every run — not a guess — and has the bot send you a standalone
   Telegram message (not attached to any prompt) once it's within 7 days of

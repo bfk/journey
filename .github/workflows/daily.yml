@@ -9,6 +9,14 @@ on:
     - cron: "17 * * * *"
   workflow_dispatch: {}
 
+concurrency:
+  # Prevents a manual "Run workflow" click from ever overlapping with the
+  # hourly schedule (or with another manual click) -- both would pull,
+  # mutate, and push state.json at once otherwise. Queues rather than
+  # cancels, so an in-flight commit/push is never interrupted.
+  group: journey-run
+  cancel-in-progress: false
+
 jobs:
   run:
     runs-on: ubuntu-latest

@@ -23,6 +23,8 @@ def get_by_id(question_id: str) -> dict | None:
 
 def pick_next(recent_ids: list[str]) -> dict:
     prompts = load_all()
+    if not prompts:
+        raise RuntimeError("prompts.json is empty -- add at least one question.")
     recent = set(recent_ids)
     candidates = [p for p in prompts if p["id"] not in recent]
     if not candidates:

@@ -15,9 +15,10 @@ token = os.environ.get("TELEGRAM_BOT_TOKEN")
 if not token:
     # .env may not be loaded yet since TELEGRAM_CHAT_ID isn't set -- read the token directly.
     env_path = Path(__file__).resolve().parent.parent / ".env"
-    for line in env_path.read_text().splitlines():
-        if line.startswith("TELEGRAM_BOT_TOKEN="):
-            token = line.split("=", 1)[1].strip().strip('"').strip("'")
+    if env_path.exists():
+        for line in env_path.read_text().splitlines():
+            if line.startswith("TELEGRAM_BOT_TOKEN="):
+                token = line.split("=", 1)[1].strip().strip('"').strip("'")
 
 if not token:
     print("Set TELEGRAM_BOT_TOKEN in .env first.")
