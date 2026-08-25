@@ -1,47 +1,56 @@
 # journey
 
-A low-key daily journalling prompt over Telegram.
+A low-key daily journaling prompt over Telegram.
 
-Every evening, `journey` sends you an open-ended question. When you reply, your answer is committed as a dated entry to a private GitHub repository that you control.
+Every evening it sends you an open-ended question. Whenever you reply, your answer is committed as a dated entry to a private GitHub repository that you control.
 
-There is no server to run and no third-party journalling service holding your entries. The project uses a small Python script, a Telegram bot, Git, and GitHub Actions.
+There is no server to run and no third-party journaling service holding your journal: just a script, a Telegram bot, Git, and GitHub Actions.
 
 ## How it works
 
-- `prompts.json` contains a library of open-ended questions. Each run chooses one at random while avoiding the 30 most recently used questions.
-- `journey/run.py` checks Telegram for new replies, commits them to your entries repository, and sends the day's question once it is evening in your timezone.
-- `.github/workflows/daily.yml` runs the script hourly on GitHub Actions.
-- The script checks `JOURNEY_TIMEZONE` and `JOURNEY_SEND_HOUR`, so it sends only once per local calendar day and only after the configured hour.
-- Replies are normally associated with the most recent prompt. If you use Telegram's Reply action to quote an older prompt, the entry is associated with the date of that prompt instead.
-- Persistent state is stored in `.state/state.json` in your entries repository. This records processed Telegram messages, recently used questions, and the last prompt sent.
-- Journal entries are stored in a separate private repository, so your personal writing is never mixed with this code repository.
+`prompts.json` is a library of open-ended questions. Each run picks one at random, avoiding the last 30 used.
 
-The state retains prompt-message mappings for the last 180 days, which allows you to go back and answer an older prompt by replying to that specific Telegram message.
+`journey/run.py` is the whole program. It checks Telegram for new replies, commits them to your entries repository, and sends that day's question once it is evening in your timezone.
 
-## Why GitHub Actions instead of a local scheduled task?
+The program runs on GitHub Actions rather than on your laptop. The workflow triggers hourly, but the script sends only once per day. It checks the local wall-clock time set by `JOURNEY_TIMEZONE` and `JOURNEY_SEND_HOUR` in `.github/workflows/daily.yml`, then sends after that hour once per local calendar day.
 
-A local `cron` or `launchd` job only runs while its computer is awake. An application-level scheduled task may also depend on that application remaining open.
+The default configuration sends at 9pm Europe/London time. You do not need to edit the workflow if that suits you.
 
-GitHub Actions runs independently of your own devices. The workflow can send the prompt even when your laptop is closed or switched off. Because an Actions runner is temporary, the project stores its durable state in the entries repository rather than on the runner's local disk.
+Running hourly also means that a reply is normally collected and committed within about an hour.
 
-## What you will need
+State that must survive between runs lives in `.state/state.json` inside your entries repository. It records which Telegram messages have been processed, which questions were recently asked, and when the last prompt was sent. This persists through Git commits because each GitHub Actions runner is discarded after its run.
 
-Before you start, make sure you have:
+Journal entries live in a separate private repository, referred to throughout this README as `<entries-repo>`. The code can remain public without mixing it with your journal content.
 
-- a GitHub account;
-- Git installed;
-- Python 3 installed;
-- the [GitHub CLI](https://cli.github.com/) installed;
-- a Telegram account; and
-- permission to create a private GitHub repository and repository secrets.
+A plain Telegram message is assumed to answer the most recent prompt. If you use Telegram's Reply action to quote an older prompt, the reply is attributed to the date and question it answers, even if newer prompts have since been sent. This lets you catch up on a missed prompt without placing the answer under today's date.
+
+The state keeps the last 180 days of prompt-message ID to date/question mappings for this purpose. See `journey/state.py`.
+
+## Why GitHub Actions rather than a local scheduled task?
+
+A `launchd` or `cron` job on a personal computer runs only while that computer is awake. An application-level scheduled task may also depend on the application remaining open.
+
+GitHub Actions runs on GitHub's infrastructure. There is no server to maintain and no personal computer that must remain switched on. The trade-off is that entries and run state must persist in Git rather than on a runner's local disk.
+
+## Deployment model
+
+Journey is a single-user application. One fork runs one person's journal, using that person's Telegram bot and private entries repository.
+
+The upstream `bfk/journey` repository runs the maintainer's instance. To run Journey for yourself, fork the repository into your own GitHub account. Your fork gives you a separate GitHub Actions workflow and your own repository secrets.
+
+Throughout this README, **your Journey repository** means your fork, normally `<your-github-username>/journey`.
 
 ## One-time setup
 
-### 1. Create a Telegram bot
+### 1. Create the Telegram bot
 
-Searching for "BotFather" in Telegram is unsafe because display names are not unique. Open [the official BotFather account](https://t.me/BotFather) directly and check that:
+Searching for "BotFather" in Telegram is unsafe. Telegram search matches display names, which are not unique, while the `@username` is unique.
 
-- the username shown in the chat header is exactly `BotFather`; and
+Open [the official BotFather account](https://t.me/BotFather) directly rather than finding it through Telegram search.
+
+Check that:
+
+- the username in the chat header is exactly `BotFather`; and
 - the account has Telegram's verified badge.
 
 Then:
@@ -49,9 +58,9 @@ Then:
 1. Send `/newbot`.
 2. Give the bot a name and a username. The username must end in `bot`, for example `my_journey_bot`.
 3. Save the token BotFather gives you. It will look similar to `123456789:AAExampleTokenNotReal`.
-4. Send your new bot any message, such as `hi`, so that it has a conversation with you to inspect.
+4. Send your new bot any message, such as `hi`, so that it knows who you are.
 
-The genuine BotFather does not ask for your Telegram password, a login code, or a sign-in on another website.
+The genuine BotFather will never ask for your Telegram password, a login code, or a sign-in on another website.
 
 ### 2. Install and authenticate the GitHub CLI
 
@@ -67,35 +76,39 @@ Then authenticate:
 gh auth login
 ```
 
-Run `gh auth login` directly in your terminal. It uses an interactive sign-in flow.
+Run `gh auth login` yourself in a terminal. It uses an interactive browser sign-in.
 
-### 3. Clone this repository
+### 3. Fork and clone Journey
 
-From the directory where you keep development projects, run:
+On the [Journey repository](https://github.com/bfk/journey), select **Fork** and create the fork in your own GitHub account. Keep the default repository name, `journey`.
+
+Then clone your fork:
 
 ```bash
-git clone https://github.com/bfk/journey.git
+gh repo clone <your-github-username>/journey
 cd journey
 ```
 
-You now have the code repository. You do not need to create or republish it.
+You should now be in the root of your fork's local clone. This is the directory containing `README.md`, `prompts.json`, `.github/`, and the `journey/` Python package as siblings.
 
-If you want to make your own changes and keep them on GitHub, fork the project first and clone your fork instead.
+### 4. Create your private entries repository
 
-### 4. Create a private entries repository
+`<entries-repo>` is a placeholder. Choose your own name, ideally one that is not derived from `journey` or anything else documented here.
 
-Your journal entries and the application's persistent state live in a separate repository.
+Keeping `ENTRIES_REPO` as a secret means that the name of the private repository does not need to appear in your public Journey fork. A non-obvious name adds minor obscurity, although GitHub's private-repository access controls remain the security boundary.
 
-Throughout this README, `<entries-repo>` means the name you choose for that repository. Consider choosing a name that is not obviously connected to `journey`. The repository name is not a security boundary, but a less predictable name avoids advertising where your entries are stored.
+Create the repository outside the `journey` folder. Do not nest one Git repository inside the other's working directory.
 
-Run the following command from the directory in which you want the entries repository to live. Do not run it inside the cloned `journey` directory.
+For example:
 
 ```bash
-cd ~/Dropbox/dev  # or another directory outside the journey repository
+cd ~/Dropbox/dev  # or wherever you keep local repositories
 gh repo create <entries-repo> --private --clone
 ```
 
-This leaves you with two independent repositories, for example:
+The entries repository can live in a cloud-synchronised folder such as Dropbox or iCloud Drive. GitHub Actions clones it fresh for each run and never uses your local copy. Avoid running Git commands against the same local clone from two computers at the same time.
+
+You should now have two independent repositories, for example:
 
 ```text
 ~/Dropbox/dev/
@@ -103,13 +116,11 @@ This leaves you with two independent repositories, for example:
 └── <entries-repo>/
 ```
 
-The entries repository may be in a cloud-synchronised folder such as Dropbox or iCloud Drive. GitHub Actions clones it afresh on each run and does not use your local copy. As with any shared working directory, avoid running Git commands against the same local clone from two computers at the same time.
-
-The entries repository must remain private because it contains your journal text.
+The `journey` repository is your public fork containing the application. `<entries-repo>` is private and contains your journal and persistent state.
 
 ### 5. Configure local testing
 
-Return to the cloned `journey` repository:
+Return to your local Journey clone:
 
 ```bash
 cd /path/to/journey
@@ -119,22 +130,22 @@ cp .env.example .env
 Edit `.env` and set:
 
 - `TELEGRAM_BOT_TOKEN` to the token from BotFather;
-- `ENTRIES_REPO_PATH` to the path of your local `<entries-repo>` clone; and
+- `ENTRIES_REPO_PATH` to the local path of your `<entries-repo>` clone; and
 - `TELEGRAM_CHAT_ID` after obtaining it in the next step.
 
-After you have sent your bot a message, run:
+After sending your bot a message, run:
 
 ```bash
 python3 scripts/capture_chat_id.py
 ```
 
-Copy the `chat_id` printed by the script into `.env` as `TELEGRAM_CHAT_ID`.
+Paste the `chat_id` printed by the script into `.env` as `TELEGRAM_CHAT_ID`.
 
-Do not commit `.env`. It contains sensitive values intended only for local use.
+Do not commit `.env`. It contains sensitive values for local use.
 
-### 6. Test it locally
+### 6. Test it manually
 
-From the root of the `journey` repository, run:
+From the root of your local Journey clone, run:
 
 ```bash
 python3 -m journey.run --force
@@ -142,7 +153,7 @@ python3 -m journey.run --force
 
 You should receive a message from your bot in Telegram.
 
-Reply to the prompt, then run the same command again:
+Reply to it, then run the same command again:
 
 ```bash
 python3 -m journey.run --force
@@ -154,79 +165,77 @@ The script should commit your reply to:
 <entries-repo>/entries/<year>/<date>.md
 ```
 
-It will then push the commit and send another question.
+It should push the commit, then send another question.
 
-`--force` bypasses both the evening-hour check and the check that prevents a second prompt being sent on the same day. Use it for testing rather than routine operation.
+`--force` bypasses both the "already sent today" check and the evening-hour check, so you can test at any time. It can send more than one prompt on the same day, so use it for testing rather than routine operation.
 
-### 7. Give GitHub Actions access to the entries repository
+### 7. Create a token for the entries repository
 
-The workflow runs in the `journey` repository but must push to your separate private entries repository. GitHub's automatic workflow token does not provide that cross-repository access.
+The workflow runs in your Journey fork but must push to your separate private entries repository. GitHub's automatic per-workflow token covers only the repository in which the workflow runs.
 
 Create a fine-grained personal access token at [GitHub personal access tokens](https://github.com/settings/personal-access-tokens/new) with:
 
-- **Repository access:** only your `<entries-repo>` repository;
-- **Repository permission:** `Contents: Read and write`; and
+- **Repository access:** only `<entries-repo>`;
+- **Permissions:** `Contents: Read and write`; and
 - no other permissions.
 
 Save the token when GitHub displays it.
 
 ### 8. Add the GitHub Actions secrets
 
-In your cloned `journey` repository on GitHub, open:
+In your Journey fork on GitHub, open:
 
-**Settings → Secrets and variables → Actions → Secrets**
+**Settings → Secrets and variables → Actions**
 
-Add these as **repository secrets**:
+Under **Secrets**, add each of these as a **repository secret**:
 
-| Secret | Value |
-| --- | --- |
-| `ENTRIES_REPO_TOKEN` | The fine-grained personal access token created above |
-| `ENTRIES_REPO` | `<your-github-username>/<entries-repo>` |
-| `TELEGRAM_BOT_TOKEN` | The token issued by BotFather |
-| `TELEGRAM_CHAT_ID` | The chat ID captured during local setup |
+- `ENTRIES_REPO_TOKEN`: the fine-grained personal access token created in step 7.
+- `ENTRIES_REPO`: `<your-github-username>/<entries-repo>`.
+- `TELEGRAM_BOT_TOKEN`: the token issued by BotFather.
+- `TELEGRAM_CHAT_ID`: the chat ID captured during local setup.
 
-Use repository secrets rather than environment secrets or repository variables. The workflow does not declare a GitHub environment, and secret values are redacted from workflow logs.
+Use repository secrets rather than environment secrets or repository variables. The workflow does not declare a GitHub environment, so environment secrets will not be available to it.
 
-`ENTRIES_REPO` is stored as a secret even though it is not a credential. This prevents the name of the private repository appearing in logs from a public code repository.
+`ENTRIES_REPO` is stored as a secret even though the name itself is not a credential. `actions/checkout` logs the repository it is synchronising, and values supplied through `secrets.*` are redacted from workflow logs. This avoids advertising which private repository backs a public Journey fork.
 
-### 9. Set your timezone and delivery hour
+### 9. Confirm the schedule
 
-Open `.github/workflows/daily.yml` and edit:
+The default workflow configuration sends the daily prompt at 9pm Europe/London time. If that suits you, do not change `.github/workflows/daily.yml`.
+
+If you want a different local time or timezone, edit:
 
 - `JOURNEY_TIMEZONE`; and
 - `JOURNEY_SEND_HOUR`.
 
-These values are stored in the workflow rather than as secrets because they are configuration, not credentials.
-
-Commit and push your changes:
+Then commit and push the change to your fork:
 
 ```bash
 git add .github/workflows/daily.yml
-git commit -m "Configure journey schedule"
+git commit -m "Configure Journey schedule"
 git push
 ```
 
-If you cloned the original repository directly and do not have permission to push to it, create a fork, point your local `origin` remote at your fork, and push the configuration there. GitHub Actions must run from a repository you control because that is where you add the secrets.
+These values are stored in the workflow rather than as secrets because they are configuration, not credentials.
 
-### 10. Enable and verify the workflow
+### 10. Run and verify the workflow
 
-In the GitHub repository that you control:
+In your Journey fork on GitHub:
 
 1. Open the **Actions** tab.
 2. Enable workflows if GitHub asks you to do so.
 3. Select **Journey daily prompt**.
-4. Choose **Run workflow** to trigger a manual run.
-5. Check the run output and confirm that the bot sends a prompt.
+4. Select **Run workflow** to trigger it manually.
+5. Check the run and confirm that your Telegram bot sends a prompt.
 
-Once the manual run works, the scheduled workflow can take over.
+Once the manual run works, the scheduled workflow can take over. You do not need to leave your computer running.
 
 ## Day-to-day use
 
-You do not need to leave your computer running.
+The workflow runs hourly. After the configured local send hour, the first eligible run sends that day's prompt. A Telegram reply is normally collected and committed by a later hourly run.
 
-The GitHub Actions workflow runs hourly. After the configured local send hour, the first eligible run sends that day's prompt. A Telegram reply is normally collected and committed within roughly the next hourly run.
+To answer the latest prompt, send an ordinary message in the bot chat.
 
-To answer the latest prompt, send an ordinary reply in the bot chat. To answer an older prompt, use Telegram's Reply action on that specific prompt message.
+To answer an older prompt, use Telegram's Reply action on that specific prompt message.
 
 Your entries accumulate in the private entries repository under:
 
@@ -236,29 +245,25 @@ entries/<year>/<date>.md
 
 ## Customising the prompts
 
-Edit `prompts.json` in the code repository, then commit and push your changes to the repository from which the workflow runs.
-
-The application avoids the 30 most recently used prompts when choosing the next question.
-
-## Running manually
-
-For local testing or an immediate forced run:
+Edit `prompts.json` in your Journey fork, then commit and push the change:
 
 ```bash
-python3 -m journey.run --force
+git add prompts.json
+git commit -m "Customise Journey prompts"
+git push
 ```
 
-Remember that `--force` can send more than one prompt on the same day.
+The application avoids the 30 most recently used prompts when choosing the next question.
 
 ## Security notes
 
 - Keep the entries repository private.
 - Never commit `.env`.
-- Store `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `ENTRIES_REPO`, and `ENTRIES_REPO_TOKEN` as GitHub Actions repository secrets.
+- Store `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `ENTRIES_REPO`, and `ENTRIES_REPO_TOKEN` as GitHub Actions repository secrets in your fork.
 - Limit the fine-grained personal access token to the entries repository and grant only `Contents: Read and write`.
-- Treat the Telegram bot token and GitHub token as credentials. Revoke and replace either one if it is exposed.
+- Treat the Telegram bot token and GitHub token as credentials. Revoke and replace either token if it is exposed.
 - A non-obvious entries-repository name provides only minor additional obscurity. GitHub access controls and the restricted token are the security boundaries.
-- This design keeps journal content out of the code repository, but the content is still stored by GitHub and messages still pass through Telegram.
+- Journal content is stored by GitHub, and messages pass through Telegram.
 
 ## Troubleshooting
 
@@ -270,10 +275,10 @@ Send a message directly to your bot, then run the script again.
 
 Check that:
 
-- `ENTRIES_REPO` contains both the GitHub username and repository name;
-- `ENTRIES_REPO_TOKEN` is a fine-grained token with access to that repository;
+- `ENTRIES_REPO` contains both your GitHub username and the entries repository name;
+- `ENTRIES_REPO_TOKEN` has access to that repository;
 - the token has `Contents: Read and write`; and
-- all four values were added as repository secrets in the repository running the workflow.
+- all four values were added as repository secrets in your Journey fork.
 
 ### The workflow runs but no prompt arrives
 
@@ -285,13 +290,13 @@ Check:
 
 Use a manual workflow run or the local `--force` option when testing.
 
-### I cannot push the workflow configuration
+### The workflow is not visible or does not run
 
-A clone of `bfk/journey` points at the original repository by default. If you are not a contributor to that repository, fork it into your own GitHub account, change your local `origin` to the fork, and push there. Add the Actions secrets to your fork.
+Check that you are looking at the **Actions** tab in your fork, `<your-github-username>/journey`, rather than the upstream `bfk/journey` repository. Enable workflows in the fork if GitHub asks you to do so.
 
 ## Repository separation at a glance
 
-The repository running the workflow contains:
+Your Journey fork contains:
 
 - the Python code;
 - the prompt library;
@@ -301,6 +306,6 @@ The repository running the workflow contains:
 Your private entries repository contains:
 
 - your dated journal entries; and
-- `.state/state.json`, which allows the application to continue correctly across temporary Actions runners.
+- `.state/state.json`, which lets the application continue correctly across temporary Actions runners.
 
-Keeping these repositories separate allows the code to be shared while the journal remains private.
+Keeping the repositories separate allows the code to remain public while your journal remains private.
