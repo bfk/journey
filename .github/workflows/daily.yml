@@ -8,12 +8,13 @@ on:
     # with no DST awareness, and means a reply is picked up within a couple
     # of hours instead of a full day.
     #
-    # Was hourly; observed in practice (see README Known limitations) that
+    # Was hourly; observed in practice (see README, Day-to-day use) that
     # GitHub's schedule trigger degrades badly over consecutive days at that
     # frequency -- gaps grew from ~90min to 800+min over about a week, well
     # past documented top-of-hour jitter. Lower frequency is the standard
     # mitigation for this, though not a guarantee -- see --backfill-date in
-    # journey/run.py for recovering a day that gets skipped regardless.
+    # journey/run.py (README: Troubleshooting) for recovering a day that
+    # gets skipped regardless.
     - cron: "17 */2 * * *"
   workflow_dispatch: {}
 
@@ -91,5 +92,5 @@ jobs:
           ENTRIES_REPO_TOKEN: ${{ secrets.ENTRIES_REPO_TOKEN }}
           ENTRIES_REPO: ${{ secrets.ENTRIES_REPO }}
           JOURNEY_TIMEZONE: Europe/London
-          JOURNEY_SEND_HOUR: "21"
+          JOURNEY_SEND_HOUR: "19"
         run: python3 -m journey.run

@@ -38,7 +38,7 @@ ENTRIES_REPO_PATH = Path(_require("ENTRIES_REPO_PATH")).expanduser()
 
 # Local wall-clock hour (0-23) at which the daily prompt should go out.
 TIMEZONE = os.environ.get("JOURNEY_TIMEZONE", "Europe/London")
-SEND_HOUR_LOCAL = int(os.environ.get("JOURNEY_SEND_HOUR", "21"))
+SEND_HOUR_LOCAL = int(os.environ.get("JOURNEY_SEND_HOUR", "19"))
 
 # Optional: only present in the GitHub Actions run (not local manual testing),
 # used solely for the PAT-expiry health check in journey/health.py -- the

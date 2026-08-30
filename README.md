@@ -12,11 +12,13 @@ There is no server to run and no third-party journaling service holding your jou
 
 `journey/run.py` is the whole program. It checks Telegram for new replies, commits them to your entries repository, and sends that day's question once it is evening in your timezone.
 
-The program runs on GitHub Actions rather than on your laptop. The workflow triggers hourly, but the script sends only once per day. It checks the local wall-clock time set by `JOURNEY_TIMEZONE` and `JOURNEY_SEND_HOUR` in `.github/workflows/daily.yml`, then sends after that hour once per local calendar day.
+The program runs on GitHub Actions rather than on your laptop. The workflow triggers every 2 hours, but the script sends only once per day. It checks the local wall-clock time set by `JOURNEY_TIMEZONE` and `JOURNEY_SEND_HOUR` in `.github/workflows/daily.yml`, then sends after that hour once per local calendar day.
 
-The default configuration sends at 9pm Europe/London time. You do not need to edit the workflow if that suits you.
+The default configuration sends at 7pm Europe/London time. You do not need to edit the workflow if that suits you.
 
-Running hourly also means that a reply is normally collected and committed within about an hour.
+Running every 2 hours also means that a reply is normally collected and committed within a couple of hours.
+
+The default send hour is chosen deliberately, not just for tone: because the workflow fires on even hours only, an earlier send hour gives more of those fires a chance to fall inside the eligible window before midnight, not just a wider window in the abstract. At 7pm, both the 20:00 and 22:00 fires qualify; at 9pm, only the 22:00 fire does. If GitHub delays or skips one scheduled fire — which happens in practice, see Troubleshooting — a second independent chance the same evening matters more than the exact number of hours in the window.
 
 State that must survive between runs lives in `.state/state.json` inside your entries repository. It records which Telegram messages have been processed, which questions were recently asked, and when the last prompt was sent. This persists through Git commits because each GitHub Actions runner is discarded after its run.
 
@@ -200,7 +202,7 @@ Use repository secrets rather than environment secrets or repository variables. 
 
 ### 9. Confirm the schedule
 
-The default workflow configuration sends the daily prompt at 9pm Europe/London time. If that suits you, do not change `.github/workflows/daily.yml`.
+The default workflow configuration sends the daily prompt at 7pm Europe/London time. If that suits you, do not change `.github/workflows/daily.yml`.
 
 If you want a different local time or timezone, edit:
 
@@ -256,6 +258,15 @@ git push
 ```
 
 The application avoids the 30 most recently used prompts when choosing the next question.
+
+Existing prompt ids must keep their original text. `journey/run.py` resolves a sent prompt's wording from `prompts.json` by id when a reply is recorded, not from a copy made when the prompt was sent — so editing an existing id's text can retroactively change what an already-sent, not-yet-answered prompt is recorded as having asked. Add a new id for a reworded question, or delete an id outright; both are safe. `.github/workflows/check-prompts.yml` runs on every push that touches `prompts.json` and fails the push if an existing id's text has changed.
+
+## Maintenance
+
+Two things need periodic attention:
+
+- **The `ENTRIES_REPO_TOKEN` fine-grained personal access token expires** on whatever date was chosen when creating it (step 7). `journey/health.py` checks GitHub's own record of that expiry date on every run — not a guess — and sends a standalone Telegram message, not attached to any prompt, once it is within 7 days of expiring, once per day until the token is rotated. To rotate: create a new fine-grained personal access token the same way as in step 7, and update the `ENTRIES_REPO_TOKEN` secret with the new value.
+- **GitHub disables a scheduled workflow after 60 days of no activity** in the repository the workflow runs in. Journey's actual daily activity lands in the separate entries repository, so the Journey fork itself could go 60 days without a commit if the code is never edited. The workflow checks the age of its own last commit on every run and, once that exceeds 45 days, pushes a one-line `.heartbeat` commit to reset GitHub's inactivity clock. This requires no action — it is documented here so a `chore: keepalive` commit in the history is not a surprise.
 
 ## Security notes
 
