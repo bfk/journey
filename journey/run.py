@@ -1,18 +1,24 @@
-"""Daily journey run: collect any new reply, commit it, and send tonight's
-question once it's actually evening in the configured local timezone.
+"""journey has two independent commands, run as separate scheduled workflows
+because they have fundamentally different tolerance for a missed or delayed
+run:
 
-Meant to be triggered hourly (e.g. by a GitHub Actions cron), not exactly at
-the target hour -- the hour gate below is what actually decides whether to
-send, so drift, missed runs, and DST are all handled without special-casing.
-All state that needs to survive between runs lives in .state/state.json
-inside the entries repo, since it's committed and pushed like any entry.
+- `send`: must fire within a narrow evening window, or that day's prompt is
+  permanently lost (recoverable only via --backfill-date). Scheduled
+  sparingly and deliberately -- a handful of fires in the evening window --
+  precisely because what matters is that it actually fires, not that it
+  fires often.
+- `poll`: fetches Telegram replies and commits them. A late or occasionally
+  skipped poll only delays when a reply becomes visible -- nothing is lost,
+  since Telegram's own update offset and this app's reply-to-prompt
+  attribution are both idempotent regardless of when a poll actually runs.
+  Can be scheduled as frequently as wanted without a correctness cost.
 
-A reply is attributed to a prompt in one of two ways: if it's an explicit
-Telegram "reply" (quoting a specific past message), it's attached to whatever
-prompt that message actually was, even if newer prompts have gone out since
--- this is what lets you answer something you missed a few days ago. Any
-other message is assumed to be answering the most recent prompt, since
-that's what a plain (non-reply) message in a one-question-a-day chat means.
+Both share the same state.json in the entries repo and must never run
+concurrently against it -- see the shared concurrency group in both
+workflow files. Ownership within state.json is split cleanly: `send` is the
+only writer of last_prompt, sent_prompts, recent_question_ids, and
+last_pat_warning_date; `poll` is the only writer of telegram_offset, and
+only ever reads (never writes) last_prompt/sent_prompts.
 """
 from __future__ import annotations
 
@@ -34,54 +40,7 @@ def _resolve_target(message: dict, st: dict) -> dict | None:
     return st.get("last_prompt")
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--force",
-        action="store_true",
-        help="Send tonight's prompt even if it's not yet the target hour, or one was already sent today.",
-    )
-    parser.add_argument(
-        "--backfill-date",
-        metavar="YYYY-MM-DD",
-        help="Send a fresh prompt right now, but attribute it to this past date instead of "
-        "today -- for rebuilding a day the schedule skipped. Reply using Telegram's reply "
-        "action on that specific message (not a plain message) to have it land under the "
-        "backfilled date; a plain reply still defaults to today's actual prompt as normal. "
-        "Does nothing else in this run -- run normally afterward.",
-    )
-    args = parser.parse_args()
-
-    entries.sync_repo()
-
-    client = TelegramClient(config.TELEGRAM_BOT_TOKEN)
-    st = state_mod.load()
-    now_local = datetime.datetime.now(ZoneInfo(config.TIMEZONE))
-    today = now_local.date()
-
-    if args.backfill_date:
-        backfill_date = datetime.date.fromisoformat(args.backfill_date)
-        question = prompts.pick_next(st.get("recent_question_ids", []))
-        sent_message = client.send_message(
-            config.TELEGRAM_CHAT_ID,
-            f"(Backfilling {backfill_date.isoformat()}) {question['text']}",
-        )
-        state_mod.record_question_used(st, question["id"])
-        # Deliberately not touching last_prompt: that stays pointed at today's
-        # real prompt (or none), so a plain non-reply message still defaults
-        # to today as normal. Only an explicit reply-to on this specific
-        # message resolves to the backfilled date, via sent_prompts.
-        state_mod.record_sent_prompt(st, sent_message["message_id"], backfill_date.isoformat(), question["id"])
-        state_mod.save(st)
-        message = f"backfill prompt: {backfill_date.isoformat()}"
-        wrote = entries.commit_and_push(message)
-        print(
-            f"Sent backfill prompt {question['id']} for {backfill_date.isoformat()} "
-            f"(message_id={sent_message['message_id']}). Reply to that message using "
-            f"Telegram's reply action to attribute it correctly. {'Pushed' if wrote else 'Nothing to push'}."
-        )
-        return 0
-
+def _poll(client: TelegramClient, st: dict) -> list[str]:
     updates = client.get_all_updates(offset=st.get("telegram_offset"))
     replies_by_date: dict[str, list[str]] = {}
     question_id_by_date: dict[str, str] = {}
@@ -111,7 +70,6 @@ def main() -> int:
         st["telegram_offset"] = max_update_id + 1
 
     commit_message_parts = []
-
     for date_str in sorted(replies_by_date):
         entry_date = datetime.date.fromisoformat(date_str)
         # Resolve the prompt text from prompts.json now, by id -- never trust
@@ -129,10 +87,17 @@ def main() -> int:
         else:
             print("No new reply since last run.")
 
+    return commit_message_parts
+
+
+def _send(client: TelegramClient, st: dict, now_local: datetime.datetime, force: bool) -> list[str]:
+    today = now_local.date()
+    commit_message_parts = []
+
     already_sent_today = st.get("last_prompt") and st["last_prompt"]["date"] == today.isoformat()
     time_to_send = now_local.hour >= config.SEND_HOUR_LOCAL
 
-    if args.force or (time_to_send and not already_sent_today):
+    if force or (time_to_send and not already_sent_today):
         question = prompts.pick_next(st.get("recent_question_ids", []))
         sent_message = client.send_message(config.TELEGRAM_CHAT_ID, question["text"])
         state_mod.record_question_used(st, question["id"])
@@ -161,6 +126,64 @@ def main() -> int:
         print("Sent PAT-expiry warning.")
 
     state_mod.prune_sent_prompts(st, today)
+    return commit_message_parts
+
+
+def _backfill(client: TelegramClient, st: dict, backfill_date: datetime.date) -> list[str]:
+    question = prompts.pick_next(st.get("recent_question_ids", []))
+    sent_message = client.send_message(
+        config.TELEGRAM_CHAT_ID,
+        f"(Backfilling {backfill_date.isoformat()}) {question['text']}",
+    )
+    state_mod.record_question_used(st, question["id"])
+    # Deliberately not touching last_prompt: that stays pointed at today's
+    # real prompt (or none), so a plain non-reply message still defaults
+    # to today as normal. Only an explicit reply-to on this specific
+    # message resolves to the backfilled date, via sent_prompts.
+    state_mod.record_sent_prompt(st, sent_message["message_id"], backfill_date.isoformat(), question["id"])
+    print(
+        f"Sent backfill prompt {question['id']} for {backfill_date.isoformat()} "
+        f"(message_id={sent_message['message_id']}). Reply to that message using "
+        f"Telegram's reply action to attribute it correctly."
+    )
+    return [f"backfill prompt: {backfill_date.isoformat()}"]
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    send_parser = subparsers.add_parser("send", help="Send today's prompt if it's time.")
+    send_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Send even if it's not yet the target hour, or one was already sent today.",
+    )
+    send_parser.add_argument(
+        "--backfill-date",
+        metavar="YYYY-MM-DD",
+        help="Send a fresh prompt now, but attribute it to this past date instead of today "
+        "-- for rebuilding a day the schedule skipped. Reply using Telegram's reply action "
+        "on that specific message (not a plain message) to land it correctly. Does nothing "
+        "else in this run.",
+    )
+
+    subparsers.add_parser("poll", help="Fetch and commit any new Telegram replies.")
+
+    args = parser.parse_args()
+
+    entries.sync_repo()
+    client = TelegramClient(config.TELEGRAM_BOT_TOKEN)
+    st = state_mod.load()
+
+    if args.command == "poll":
+        commit_message_parts = _poll(client, st)
+    elif args.backfill_date:
+        commit_message_parts = _backfill(client, st, datetime.date.fromisoformat(args.backfill_date))
+    else:
+        now_local = datetime.datetime.now(ZoneInfo(config.TIMEZONE))
+        commit_message_parts = _send(client, st, now_local, args.force)
+
     state_mod.save(st)
     message = ", ".join(commit_message_parts) if commit_message_parts else "journey: update state"
     wrote = entries.commit_and_push(message)

@@ -10,15 +10,14 @@ There is no server to run and no third-party journaling service holding your jou
 
 `prompts.json` is a library of open-ended questions. Each run picks one at random, avoiding the last 30 used.
 
-`journey/run.py` is the whole program. It checks Telegram for new replies, commits them to your entries repository, and sends that day's question once it is evening in your timezone.
+`journey/run.py` has two commands, run as two separate GitHub Actions workflows, because they tolerate a missed or delayed run very differently:
 
-The program runs on GitHub Actions rather than on your laptop. The workflow triggers every 2 hours, but the script sends only once per day. It checks the local wall-clock time set by `JOURNEY_TIMEZONE` and `JOURNEY_SEND_HOUR` in `.github/workflows/daily.yml`, then sends after that hour once per local calendar day.
+- **`send`** (`.github/workflows/send-prompt.yml`) sends that day's question once it is evening in your timezone. It checks the local wall-clock time set by `JOURNEY_TIMEZONE` and `JOURNEY_SEND_HOUR`, and sends once per local calendar day. If it never fires during the eligible window on a given day, that day's prompt is permanently missed — recoverable only with `--backfill-date` (see Troubleshooting). Because a missed fire here is costly, this workflow fires only a few times a day, deliberately concentrated in the evening window rather than spread out.
+- **`poll`** (`.github/workflows/poll-replies.yml`) checks Telegram for new replies and commits them to your entries repository. A late or occasionally skipped poll only delays when a reply becomes visible — nothing is lost, so this workflow can fire much more often without the same risk.
 
-The default configuration sends at 7pm Europe/London time. You do not need to edit the workflow if that suits you.
+The default configuration sends at 7pm Europe/London time. You do not need to edit either workflow if that suits you.
 
-Running every 2 hours also means that a reply is normally collected and committed within a couple of hours.
-
-The default send hour is chosen deliberately, not just for tone: because the workflow fires on even hours only, an earlier send hour gives more of those fires a chance to fall inside the eligible window before midnight, not just a wider window in the abstract. At 7pm, both the 20:00 and 22:00 fires qualify; at 9pm, only the 22:00 fire does. If GitHub delays or skips one scheduled fire — which happens in practice, see Troubleshooting — a second independent chance the same evening matters more than the exact number of hours in the window.
+The default send hour is chosen deliberately, not just for tone: `send-prompt.yml` fires at 19:00, 21:00, and 23:00, so 7pm is the earliest hour that gets all three fires inside the eligible window before midnight — three independent chances rather than one. If GitHub delays or skips one scheduled fire, which happens in practice (see Troubleshooting), that redundancy is what actually protects the day, not the choice of hour by itself.
 
 State that must survive between runs lives in `.state/state.json` inside your entries repository. It records which Telegram messages have been processed, which questions were recently asked, and when the last prompt was sent. This persists through Git commits because each GitHub Actions runner is discarded after its run.
 
@@ -38,7 +37,7 @@ GitHub Actions runs on GitHub's infrastructure. There is no server to maintain a
 
 Journey is a single-user application. One fork runs one person's journal, using that person's Telegram bot and private entries repository.
 
-The upstream `bfk/journey` repository runs the maintainer's instance. To run Journey for yourself, fork the repository into your own GitHub account. Your fork gives you a separate GitHub Actions workflow and your own repository secrets.
+The upstream `bfk/journey` repository runs the maintainer's instance. To run Journey for yourself, fork the repository into your own GitHub account. Your fork gives you separate GitHub Actions workflows and your own repository secrets.
 
 Throughout this README, **your Journey repository** means your fork, normally `<your-github-username>/journey`.
 
@@ -150,30 +149,30 @@ Do not commit `.env`. It contains sensitive values for local use.
 From the root of your local Journey clone, run:
 
 ```bash
-python3 -m journey.run --force
+python3 -m journey.run send --force
 ```
 
 You should receive a message from your bot in Telegram.
 
-Reply to it, then run the same command again:
+Reply to it, then run:
 
 ```bash
-python3 -m journey.run --force
+python3 -m journey.run poll
 ```
 
-The script should commit your reply to:
+This should commit your reply to:
 
 ```text
 <entries-repo>/entries/<year>/<date>.md
 ```
 
-It should push the commit, then send another question.
+and push the commit. `send` and `poll` are separate commands, matching how they run as separate workflows in production — running them separately here tests exactly what production does, rather than a combined path that does not otherwise exist.
 
-`--force` bypasses both the "already sent today" check and the evening-hour check, so you can test at any time. It can send more than one prompt on the same day, so use it for testing rather than routine operation.
+`send --force` bypasses both the "already sent today" check and the evening-hour check, so you can test at any time. It can send more than one prompt on the same day, so use it for testing rather than routine operation.
 
 ### 7. Create a token for the entries repository
 
-The workflow runs in your Journey fork but must push to your separate private entries repository. GitHub's automatic per-workflow token covers only the repository in which the workflow runs.
+Both workflows run in your Journey fork but must push to your separate private entries repository. GitHub's automatic per-workflow token covers only the repository in which a workflow runs.
 
 Create a fine-grained personal access token at [GitHub personal access tokens](https://github.com/settings/personal-access-tokens/new) with:
 
@@ -202,38 +201,36 @@ Use repository secrets rather than environment secrets or repository variables. 
 
 ### 9. Confirm the schedule
 
-The default workflow configuration sends the daily prompt at 7pm Europe/London time. If that suits you, do not change `.github/workflows/daily.yml`.
+The default configuration sends the daily prompt at 7pm Europe/London time. If that suits you, do not change `.github/workflows/send-prompt.yml`.
 
-If you want a different local time or timezone, edit:
+If you want a different local time or timezone, edit `JOURNEY_TIMEZONE` and `JOURNEY_SEND_HOUR` in `.github/workflows/send-prompt.yml`. If you move the send hour more than an hour or two from 7pm, also consider adjusting the `cron:` line in that file so its fire times still bracket your new send hour — see How it works for why that alignment matters.
 
-- `JOURNEY_TIMEZONE`; and
-- `JOURNEY_SEND_HOUR`.
+`.github/workflows/poll-replies.yml` has no send hour to configure; its schedule only affects how quickly a reply is picked up, not whether anything is missed.
 
-Then commit and push the change to your fork:
+Commit and push any change to your fork:
 
 ```bash
-git add .github/workflows/daily.yml
+git add .github/workflows/send-prompt.yml
 git commit -m "Configure Journey schedule"
 git push
 ```
 
 These values are stored in the workflow rather than as secrets because they are configuration, not credentials.
 
-### 10. Run and verify the workflow
+### 10. Run and verify the workflows
 
 In your Journey fork on GitHub:
 
 1. Open the **Actions** tab.
 2. Enable workflows if GitHub asks you to do so.
-3. Select **Journey daily prompt**.
-4. Select **Run workflow** to trigger it manually.
-5. Check the run and confirm that your Telegram bot sends a prompt.
+3. Select **Journey send prompt**, then **Run workflow**, and confirm your Telegram bot sends a prompt.
+4. Reply to it, then select **Journey poll replies**, then **Run workflow**, and confirm the reply is committed to your entries repository.
 
-Once the manual run works, the scheduled workflow can take over. You do not need to leave your computer running.
+Once both manual runs work, the schedules can take over. You do not need to leave your computer running.
 
 ## Day-to-day use
 
-The workflow runs every 2 hours. After the configured local send hour, the first eligible run sends that day's prompt. A Telegram reply is normally collected and committed by a later run within the same window.
+`send-prompt.yml` fires three times in the evening (19:00, 21:00, 23:00 by default); the first of those fires after the configured send hour sends that day's prompt. `poll-replies.yml` fires every 30 minutes throughout the day and commits any reply since the last poll, whenever it actually arrives.
 
 To answer the latest prompt, send an ordinary message in the bot chat.
 
@@ -245,7 +242,7 @@ Your entries accumulate in the private entries repository under:
 entries/<year>/<date>.md
 ```
 
-GitHub's `schedule` trigger is best effort. In practice, an hourly schedule's actual firing interval was observed to degrade over consecutive days — from tens of minutes of delay up to several hours — well beyond GitHub's documented top-of-hour jitter. A lower frequency is the standard mitigation, but not a guarantee, which is why a day can still be skipped entirely. See "A day was skipped entirely" under Troubleshooting to recover one.
+GitHub's `schedule` trigger is best effort for both workflows, but the consequence differs sharply. A delayed or skipped poll just means a reply shows up a little later — nothing is lost. A delayed or skipped send is different: if none of the day's three fires actually happens, that day's prompt never goes out, and no later poll can recover it, since there is nothing to poll for. This did happen in practice under the previous single-workflow, hourly-everything design — a firing interval that was observed to degrade over consecutive days, from tens of minutes of delay up to several hours, well beyond GitHub's documented top-of-hour jitter. Splitting the two concerns and scheduling each according to its own tolerance for delay is the mitigation; `--backfill-date` (see Troubleshooting) is what to reach for if a day still gets missed regardless.
 
 ## Customising the prompts
 
@@ -266,7 +263,7 @@ Existing prompt ids must keep their original text. `journey/run.py` resolves a s
 Two things need periodic attention:
 
 - **The `ENTRIES_REPO_TOKEN` fine-grained personal access token expires** on whatever date was chosen when creating it (step 7). `journey/health.py` checks GitHub's own record of that expiry date on every run — not a guess — and sends a standalone Telegram message, not attached to any prompt, once it is within 7 days of expiring, once per day until the token is rotated. To rotate: create a new fine-grained personal access token the same way as in step 7, and update the `ENTRIES_REPO_TOKEN` secret with the new value.
-- **GitHub disables a scheduled workflow after 60 days of no activity** in the repository the workflow runs in. Journey's actual daily activity lands in the separate entries repository, so the Journey fork itself could go 60 days without a commit if the code is never edited. The workflow checks the age of its own last commit on every run and, once that exceeds 45 days, pushes a one-line `.heartbeat` commit to reset GitHub's inactivity clock. This requires no action — it is documented here so a `chore: keepalive` commit in the history is not a surprise.
+- **GitHub disables scheduled workflows after 60 days of no activity** in the repository they run in — both workflows here, since that limit applies per repository, not per workflow. Journey's actual daily activity lands in the separate entries repository, so the Journey fork itself could go 60 days without a commit if the code is never edited. `poll-replies.yml` checks the age of the fork's own last commit on every run and, once that exceeds 45 days, pushes a one-line `.heartbeat` commit to reset GitHub's inactivity clock. This requires no action — it is documented here so a `chore: keepalive` commit in the history is not a surprise.
 
 ## Security notes
 
@@ -284,7 +281,7 @@ Two things need periodic attention:
 
 Send a message directly to your bot, then run the script again.
 
-### The workflow cannot push to the entries repository
+### A workflow cannot push to the entries repository
 
 Check that:
 
@@ -293,17 +290,26 @@ Check that:
 - the token has `Contents: Read and write`; and
 - all four values were added as repository secrets in your Journey fork.
 
-### The workflow runs but no prompt arrives
+### The send workflow runs but no prompt arrives
 
 Check:
 
 - the `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` secrets;
-- `JOURNEY_TIMEZONE` and `JOURNEY_SEND_HOUR` in `.github/workflows/daily.yml`; and
+- `JOURNEY_TIMEZONE` and `JOURNEY_SEND_HOUR` in `.github/workflows/send-prompt.yml`; and
 - whether a prompt has already been sent for the current local calendar day.
 
-Use a manual workflow run or the local `--force` option when testing.
+Use a manual workflow run or the local `send --force` option when testing.
 
-### The workflow is not visible or does not run
+### The poll workflow runs but a reply never arrives in your entries repository
+
+Check:
+
+- the `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` secrets; and
+- whether the reply was sent as an explicit Telegram Reply to an old prompt message that Journey no longer has a record of (see the 180-day limit in How it works) — in that case it falls back to attributing the reply to the most recent prompt instead.
+
+Use a manual workflow run or the local `poll` command when testing.
+
+### The workflows are not visible or do not run
 
 Check that you are looking at the **Actions** tab in your fork, `<your-github-username>/journey`, rather than the upstream `bfk/journey` repository. Enable workflows in the fork if GitHub asks you to do so.
 
@@ -312,7 +318,7 @@ Check that you are looking at the **Actions** tab in your fork, `<your-github-us
 GitHub's `schedule` trigger does not guarantee delivery (see Day-to-day use). If a day has no entry at all, recover it from your local clone:
 
 ```bash
-python3 -m journey.run --backfill-date 2026-08-28
+python3 -m journey.run send --backfill-date 2026-08-28
 ```
 
 This sends a fresh prompt immediately, labeled with the date being backfilled, but does not touch today's actual prompt state. Reply to that specific message using Telegram's **Reply** action, not a plain message — a plain message still defaults to today's prompt as normal. The next run then commits your reply under the backfilled date, not today's.
@@ -323,7 +329,7 @@ Your Journey fork contains:
 
 - the Python code;
 - the prompt library;
-- the GitHub Actions workflow; and
+- the GitHub Actions workflows; and
 - no journal entries or committed credentials.
 
 Your private entries repository contains:

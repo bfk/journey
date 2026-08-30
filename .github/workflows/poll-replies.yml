@@ -1,0 +1,73 @@
+name: Journey poll replies
+
+on:
+  schedule:
+    # Telegram replies can arrive at any time, and a late or occasionally
+    # skipped poll only delays when a reply becomes visible -- nothing is
+    # lost, since both Telegram's own update offset and this app's reply
+    # attribution are idempotent regardless of when a poll actually runs.
+    # Frequency here is a latency/politeness tradeoff, not a correctness
+    # one -- tune freely without worrying about the send-side risk.
+    - cron: "*/30 * * * *"
+  workflow_dispatch: {}
+
+concurrency:
+  # Shared with send-prompt.yml deliberately -- see that file.
+  group: journey-state
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # needed only for the keepalive commit back to this repo
+    steps:
+      - name: Check out journey (code)
+        uses: actions/checkout@v4
+
+      - name: Keep this scheduled workflow alive
+        # GitHub auto-disables ALL scheduled workflows in a repo after 60
+        # days of no activity in that repo -- kept here rather than in
+        # send-prompt.yml simply because this one fires far more often,
+        # giving tighter margin on the 45-day threshold below (though
+        # either workflow would do, given how generous that margin is).
+        run: |
+          days_since_last_commit=$(( ( $(date -u +%s) - $(git log -1 --format=%ct) ) / 86400 ))
+          echo "Days since journey's last commit: $days_since_last_commit"
+          if [ "$days_since_last_commit" -ge 45 ]; then
+            git config user.name "journey-bot"
+            git config user.email "journey-bot@users.noreply.github.com"
+            date -u +"%Y-%m-%dT%H:%M:%SZ" > .heartbeat
+            git add .heartbeat
+            git commit -m "chore: keepalive (scheduled workflows auto-disable after 60 days of repo inactivity)"
+            git push
+          fi
+
+      - name: Check out the entries repo (journal data)
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ secrets.ENTRIES_REPO }}
+          token: ${{ secrets.ENTRIES_REPO_TOKEN }}
+          path: entries-repo
+
+      - name: Configure git identity for entries repo
+        working-directory: entries-repo
+        run: |
+          git config user.name "journey-bot"
+          git config user.email "journey-bot@users.noreply.github.com"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Poll
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          ENTRIES_REPO_PATH: ${{ github.workspace }}/entries-repo
+          # Note: no ENTRIES_REPO_TOKEN/ENTRIES_REPO here -- poll never
+          # calls the PAT-expiry health check, so there's no reason for
+          # this process to see that token at all. git already has push
+          # access via actions/checkout's token input above.
+        run: python3 -m journey.run poll

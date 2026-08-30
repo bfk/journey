@@ -1,0 +1,70 @@
+name: Journey send prompt
+
+on:
+  schedule:
+    # Only needs to fire a few times in the evening window -- a much lower
+    # total daily frequency than continuous polling would need, precisely
+    # because sending is the operation that can't tolerate being missed: a
+    # day's prompt not sent within its window is gone until manually
+    # backfilled (see --backfill-date), unlike a delayed reply-poll, which
+    # just shows up a little later with no correctness cost. With
+    # JOURNEY_SEND_HOUR=19, these three fires are the actual eligible
+    # window before midnight.
+    - cron: "17 19,21,23 * * *"
+  workflow_dispatch: {}
+
+concurrency:
+  # Shared with poll-replies.yml deliberately: both commands read and write
+  # the same state.json in the entries repo, so they must never run at the
+  # same time as each other, not just never overlap with themselves.
+  group: journey-state
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # needed only if this run also does the keepalive commit
+    steps:
+      - name: Check out journey (code)
+        uses: actions/checkout@v4
+
+      - name: Check out the entries repo (journal data)
+        uses: actions/checkout@v4
+        with:
+          # ENTRIES_REPO is a secret, not a repo variable, on purpose: this
+          # step's own log line ("Syncing repository: <value>") would print
+          # a plain variable's value into the (potentially public) run log
+          # unredacted. Only secrets.* get automatically masked in logs.
+          repository: ${{ secrets.ENTRIES_REPO }}
+          token: ${{ secrets.ENTRIES_REPO_TOKEN }}
+          path: entries-repo
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Ensure tzdata is available
+        run: pip install tzdata
+
+      - name: Configure git identity for entries repo
+        working-directory: entries-repo
+        run: |
+          git config user.name "journey-bot"
+          git config user.email "journey-bot@users.noreply.github.com"
+
+      - name: Send
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          ENTRIES_REPO_PATH: ${{ github.workspace }}/entries-repo
+          # Only used for the PAT-expiry health check (journey/health.py) --
+          # git itself already has push access via actions/checkout's token
+          # input above; this just lets the script make one read-only API
+          # call with the same token to ask GitHub when it expires.
+          ENTRIES_REPO_TOKEN: ${{ secrets.ENTRIES_REPO_TOKEN }}
+          ENTRIES_REPO: ${{ secrets.ENTRIES_REPO }}
+          JOURNEY_TIMEZONE: Europe/London
+          JOURNEY_SEND_HOUR: "19"
+        run: python3 -m journey.run send
