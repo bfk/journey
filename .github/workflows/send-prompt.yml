@@ -23,8 +23,10 @@ concurrency:
 jobs:
   run:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write   # needed only if this run also does the keepalive commit
+    # No permissions block: this workflow never writes to the journey repo
+    # itself (only to entries-repo, via the separate ENTRIES_REPO_TOKEN) --
+    # the keepalive commit lives in poll-replies.yml, which does need
+    # contents: write.
     steps:
       - name: Check out journey (code)
         uses: actions/checkout@v4
