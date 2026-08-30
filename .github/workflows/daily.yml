@@ -2,11 +2,19 @@ name: Journey daily prompt
 
 on:
   schedule:
-    # Runs hourly, not just at the target hour: journey/run.py itself checks
-    # the local wall-clock time and only sends once per day, at JOURNEY_SEND_HOUR.
-    # This sidesteps GitHub Actions cron being UTC-only with no DST awareness,
-    # and means a reply gets picked up within an hour instead of a full day.
-    - cron: "17 * * * *"
+    # Runs every 2 hours, not just at the target hour: journey/run.py itself
+    # checks the local wall-clock time and only sends once per day, at
+    # JOURNEY_SEND_HOUR. This sidesteps GitHub Actions cron being UTC-only
+    # with no DST awareness, and means a reply is picked up within a couple
+    # of hours instead of a full day.
+    #
+    # Was hourly; observed in practice (see README Known limitations) that
+    # GitHub's schedule trigger degrades badly over consecutive days at that
+    # frequency -- gaps grew from ~90min to 800+min over about a week, well
+    # past documented top-of-hour jitter. Lower frequency is the standard
+    # mitigation for this, though not a guarantee -- see --backfill-date in
+    # journey/run.py for recovering a day that gets skipped regardless.
+    - cron: "17 */2 * * *"
   workflow_dispatch: {}
 
 concurrency:

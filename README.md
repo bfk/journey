@@ -231,7 +231,7 @@ Once the manual run works, the scheduled workflow can take over. You do not need
 
 ## Day-to-day use
 
-The workflow runs hourly. After the configured local send hour, the first eligible run sends that day's prompt. A Telegram reply is normally collected and committed by a later hourly run.
+The workflow runs every 2 hours. After the configured local send hour, the first eligible run sends that day's prompt. A Telegram reply is normally collected and committed by a later run within the same window.
 
 To answer the latest prompt, send an ordinary message in the bot chat.
 
@@ -242,6 +242,8 @@ Your entries accumulate in the private entries repository under:
 ```text
 entries/<year>/<date>.md
 ```
+
+GitHub's `schedule` trigger is best effort. In practice, an hourly schedule's actual firing interval was observed to degrade over consecutive days — from tens of minutes of delay up to several hours — well beyond GitHub's documented top-of-hour jitter. A lower frequency is the standard mitigation, but not a guarantee, which is why a day can still be skipped entirely. See "A day was skipped entirely" under Troubleshooting to recover one.
 
 ## Customising the prompts
 
@@ -293,6 +295,16 @@ Use a manual workflow run or the local `--force` option when testing.
 ### The workflow is not visible or does not run
 
 Check that you are looking at the **Actions** tab in your fork, `<your-github-username>/journey`, rather than the upstream `bfk/journey` repository. Enable workflows in the fork if GitHub asks you to do so.
+
+### A day was skipped entirely
+
+GitHub's `schedule` trigger does not guarantee delivery (see Day-to-day use). If a day has no entry at all, recover it from your local clone:
+
+```bash
+python3 -m journey.run --backfill-date 2026-08-28
+```
+
+This sends a fresh prompt immediately, labeled with the date being backfilled, but does not touch today's actual prompt state. Reply to that specific message using Telegram's **Reply** action, not a plain message — a plain message still defaults to today's prompt as normal. The next run then commits your reply under the backfilled date, not today's.
 
 ## Repository separation at a glance
 

@@ -41,6 +41,15 @@ def main() -> int:
         action="store_true",
         help="Send tonight's prompt even if it's not yet the target hour, or one was already sent today.",
     )
+    parser.add_argument(
+        "--backfill-date",
+        metavar="YYYY-MM-DD",
+        help="Send a fresh prompt right now, but attribute it to this past date instead of "
+        "today -- for rebuilding a day the schedule skipped. Reply using Telegram's reply "
+        "action on that specific message (not a plain message) to have it land under the "
+        "backfilled date; a plain reply still defaults to today's actual prompt as normal. "
+        "Does nothing else in this run -- run normally afterward.",
+    )
     args = parser.parse_args()
 
     entries.sync_repo()
@@ -49,6 +58,29 @@ def main() -> int:
     st = state_mod.load()
     now_local = datetime.datetime.now(ZoneInfo(config.TIMEZONE))
     today = now_local.date()
+
+    if args.backfill_date:
+        backfill_date = datetime.date.fromisoformat(args.backfill_date)
+        question = prompts.pick_next(st.get("recent_question_ids", []))
+        sent_message = client.send_message(
+            config.TELEGRAM_CHAT_ID,
+            f"(Backfilling {backfill_date.isoformat()}) {question['text']}",
+        )
+        state_mod.record_question_used(st, question["id"])
+        # Deliberately not touching last_prompt: that stays pointed at today's
+        # real prompt (or none), so a plain non-reply message still defaults
+        # to today as normal. Only an explicit reply-to on this specific
+        # message resolves to the backfilled date, via sent_prompts.
+        state_mod.record_sent_prompt(st, sent_message["message_id"], backfill_date.isoformat(), question["id"])
+        state_mod.save(st)
+        message = f"backfill prompt: {backfill_date.isoformat()}"
+        wrote = entries.commit_and_push(message)
+        print(
+            f"Sent backfill prompt {question['id']} for {backfill_date.isoformat()} "
+            f"(message_id={sent_message['message_id']}). Reply to that message using "
+            f"Telegram's reply action to attribute it correctly. {'Pushed' if wrote else 'Nothing to push'}."
+        )
+        return 0
 
     updates = client.get_all_updates(offset=st.get("telegram_offset"))
     replies_by_date: dict[str, list[str]] = {}
