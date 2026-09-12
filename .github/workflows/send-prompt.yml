@@ -10,7 +10,7 @@ on:
     # just shows up a little later with no correctness cost. With
     # JOURNEY_SEND_HOUR=19, these three fires are the actual eligible
     # window before midnight.
-    - cron: "17 19,21,23 * * *"
+    - cron: "17 13,15,19,21,23 * * *"
   workflow_dispatch: {}
 
 concurrency:
