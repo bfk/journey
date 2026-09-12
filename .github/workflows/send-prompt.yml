@@ -68,5 +68,5 @@ jobs:
           ENTRIES_REPO_TOKEN: ${{ secrets.ENTRIES_REPO_TOKEN }}
           ENTRIES_REPO: ${{ secrets.ENTRIES_REPO }}
           JOURNEY_TIMEZONE: Europe/London
-          JOURNEY_SEND_HOUR: "19"
+          JOURNEY_SEND_HOUR: "13"
         run: python3 -m journey.run send
